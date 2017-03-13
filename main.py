@@ -7,8 +7,8 @@ import argparse
 cookie_jar = cookielib.CookieJar()
 opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookie_jar))
  
-# url is a string, post is a dictionary of POST parameters, headers is a dictionary of headers.
-def http_req(url, post=None, headers={}):
+# url is a string, post is a dictionary of POST parameters
+def http_req(url, post=None):
     request = urllib2.Request(url)    
     request.add_header('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2816.0 Safari/537.36')  # Tell Garmin we're some supported browser.
 
@@ -169,8 +169,8 @@ class GarminActivitiesScraper():
                               
                 activities_data[idx] = activity_data
                 print("Scrapped activity {} - {}".format(i, name.encode('utf-8')))
-                break
-            break
+#                 break
+#             break
             i += 1
             
         # print("activities_data", activities_data)
