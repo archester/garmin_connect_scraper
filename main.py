@@ -88,6 +88,11 @@ def parseInputParams():
                         type=str,
                         help="Password to log to the garmin connect",
                         required=True)
+    
+    parser.add_argument("-n", "--num-activities",
+                        type=int,
+                        help="Scrap only the last X number of activities (0=all)",
+                        default = 0)
 
     parser.add_argument("--skip-gpx",
                         action="store_true",
@@ -113,11 +118,16 @@ class GarminActivitiesScraper():
         # dictionary containing scraped activities data, activity_id is a key
         self._activities_data = {}
 
-    def run(self):
+    def run(self, num_activities = 0):
+        num_scraped = 0
         for activities in self._get_activities_list():
             for activity_url in activities:
                 activity_id, activity_data = self._scrap_activity(activity_url)
                 self._activities_data[activity_id] = activity_data
+                num_scraped += 1
+                if num_activities != 0 and num_scraped >= num_activities:
+                    print("Done scraping activities.")
+                    return
 
         print("Done scraping activities.")
 
@@ -170,7 +180,7 @@ class GarminActivitiesScraper():
             # download gpx file
             self._scrap_activity_gpx_data(activity_id, activity_data)
 
-        print("Scraped activity {} - {}".format(len(self._activities_data), name.encode('utf-8')))
+        print("Scraped activity {} - {}".format(len(self._activities_data) + 1, name.encode('utf-8')))
 
         return activity_id, activity_data
 
@@ -242,7 +252,7 @@ def main():
     scraper = GarminActivitiesScraper(skip_gpx=args.skip_gpx,
                                       skip_details=args.skip_details,
                                       skip_splits=args.skip_splits)
-    scraper.run()
+    scraper.run(args.num_activities)
     scraper.save_to_json_file()
 
 
