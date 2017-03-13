@@ -3,6 +3,7 @@ import urllib, urllib2, cookielib, json
 import bs4
 import re
 import argparse
+import os
 
 cookie_jar = cookielib.CookieJar()
 opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookie_jar))
@@ -73,7 +74,7 @@ def log_in(args):
     # Chop of 'TGT-' off the beginning, prepend 'ST-0'.
     login_ticket = 'ST-0' + login_ticket[4:]
     http_req(url_gc_post_auth + 'ticket=' + login_ticket)
-    print("Finished authentication")
+    print("Success")
 
 def parseInputParams():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -120,17 +121,19 @@ class GarminActivitiesScraper():
 
         print("Done scraping activities.")
 
-    def save_to_json(self, out_file_name="activities.json"):
+    def save_to_json_file(self, out_file_name="activities.json"):
         with open(out_file_name, "w") as f:
             json.dump(self._activities_data, f, indent=3)
 
+    def get_scrapped_json_data(self):
+        return self._activities_data
+
     """ PRIVATE """
     def _get_activities_list(self):
-        i = 1
         activities = []
         while True:
             # get another page containing list of activities
-            post_data = {} if i <= 1 else self.NEXT_ACTIVITIES_POST_DATA
+            post_data = {} if len(activities) == 0 else self.NEXT_ACTIVITIES_POST_DATA
             res = http_req(self.URL_ACTIVITIES_LIST, post_data)
 
             # let's cook
@@ -146,7 +149,6 @@ class GarminActivitiesScraper():
 
             activities = next_activities
             yield activities
-            i += 1
 
     def _scrap_activity(self, activity_url):
         activity_data = {}
@@ -155,45 +157,50 @@ class GarminActivitiesScraper():
 
         # get main activity data
         name = self._scrap_activity_main_data(activity_id, activity_data)
-        
+
         if not self._skip_splits:
             # get activity splits
             self._scrap_activity_splits_data(activity_id, activity_data)
-            
+
         if not self._skip_details:
             # get activity details
             self._scrap_activity_details_data(activity_id, activity_data)
-            
+
         if not self._skip_gpx:
             # download gpx file
             self._scrap_activity_gpx_data(activity_id, activity_data)
 
-        print("Scrapped activity {} - {}".format(len(self._activities_data), name.encode('utf-8')))
+        print("Scraped activity {} - {}".format(len(self._activities_data), name.encode('utf-8')))
 
         return activity_id, activity_data
-    
+
     def _scrap_activity_main_data(self, activity_id, activity_data):
         activity_data["href-data-json"] = self.URL_ACTIVITY_DATA_JSON_PREFIX.format(activity_id)
         data_json = http_req(activity_data["href-data-json"])
         json_data = json.loads(data_json)
         name = json_data.get("activityName", "")
         activity_data["data"] = dict(json_data)
-        
+
         return name
-    
+
     def _scrap_activity_splits_data(self, activity_id, activity_data):
         activity_data["href-splits-json"] = self.URL_ACTIVITY_SPLITS_JSON_PREFIX.format(activity_id)
         splits_json = http_req(activity_data["href-splits-json"])
         json_data = json.loads(splits_json)
         activity_data["splits"] = dict(json_data)
-        
+
     def _scrap_activity_details_data(self, activity_id, activity_data):
         activity_data["href-details-json"] = self.URL_ACTIVITY_DETAILS_JSON_PREFIX.format(activity_id)
         details_json = http_req(activity_data["href-details-json"])
         json_data = json.loads(details_json)
         activity_data["details"] = dict(json_data)
-        
+
     def _scrap_activity_gpx_data(self, activity_id, activity_data):
+        GPX_DIR = "gpx_output_files"
+        if not os.path.exists(GPX_DIR):
+            # TODO: avoid checking each time
+            os.makedirs(GPX_DIR)
+
         try:
             activity_data["href-gpx-file"] = self.URL_ACTIVITY_GPX_FILE_PREFIX.format(activity_id)
             gpx_file_content = http_req(activity_data["href-gpx-file"])
@@ -201,11 +208,11 @@ class GarminActivitiesScraper():
             # no gpx for this activity
             pass
         else:
-            gpx_file = "gpx/activity_{}.gpx".format(activity_id)
-            with open(gpx_file, "w") as f:
+            gpx_file_name = "{}{}activity_{}.gpx".format(GPX_DIR, os.path.sep, activity_id)
+            with open(gpx_file_name, "w") as f:
                 f.write(gpx_file_content)
-            activity_data["local-gpx-file"] = gpx_file
-        
+            activity_data["local-gpx-file"] = gpx_file_name
+
     # ajax weirdness needed in POST data to force page containing next set of activities
     NEXT_ACTIVITIES_POST_DATA = {
        'AJAXREQUEST' : '_viewRoot',
@@ -236,7 +243,7 @@ def main():
                                       skip_details=args.skip_details,
                                       skip_splits=args.skip_splits)
     scraper.run()
-    scraper.save_to_json()
+    scraper.save_to_json_file()
 
 
 if __name__ == "__main__": main()
