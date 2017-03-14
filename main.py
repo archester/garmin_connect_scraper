@@ -88,11 +88,11 @@ def parseInputParams():
                         type=str,
                         help="Password to log to the garmin connect",
                         required=True)
-    
+
     parser.add_argument("-n", "--num-activities",
                         type=int,
                         help="Scrap only the last X number of activities (0=all)",
-                        default = 0)
+                        default=0)
 
     parser.add_argument("--skip-gpx",
                         action="store_true",
@@ -106,6 +106,18 @@ def parseInputParams():
                         action="store_true",
                         help="Skip scraping activities splits data")
 
+    parser.add_argument("--input-file",
+                        type=str,
+                        help="Loads the activities from the existing json file given as a parameter. "
+                               "Scraps only activities that do not exist in the given file.",
+                        default="")
+
+    parser.add_argument("--output-file",
+                        type=str,
+                        help="Save the scraped activities + activities from the input file to the "
+                                "file given as a parameter.",
+                        default="activities.json")
+
     return parser.parse_args()
 
 class GarminActivitiesScraper():
@@ -118,11 +130,20 @@ class GarminActivitiesScraper():
         # dictionary containing scraped activities data, activity_id is a key
         self._activities_data = {}
 
-    def run(self, num_activities = 0):
+    def run(self, num_activities=0):
         num_scraped = 0
         for activities in self._get_activities_list():
             for activity_url in activities:
-                activity_id, activity_data = self._scrap_activity(activity_url)
+                activity_id = self._get_activity_id_from_url(activity_url)
+
+                # check if it not already in our dict, if it's there skip it
+                # that means that the activities were loaded from the file and we
+                # are only appending new ones
+                if activity_id in self._activities_data:
+                    print("Skipping activity {}".format(activity_id))
+                    continue
+
+                activity_data = self._scrap_activity(activity_url)
                 self._activities_data[activity_id] = activity_data
                 num_scraped += 1
                 if num_activities != 0 and num_scraped >= num_activities:
@@ -134,6 +155,14 @@ class GarminActivitiesScraper():
     def save_to_json_file(self, out_file_name="activities.json"):
         with open(out_file_name, "w") as f:
             json.dump(self._activities_data, f, indent=3)
+
+        return len(self._activities_data)
+
+    def load_from_file(self, file_name):
+        with open(file_name, "r") as f:
+            self._activities_data = json.load(f)
+
+        return len(self._activities_data)
 
     def get_scrapped_json_data(self):
         return self._activities_data
@@ -160,9 +189,16 @@ class GarminActivitiesScraper():
             activities = next_activities
             yield activities
 
+    def _get_activity_id_from_url(self, activity_url):
+        try:
+            href = activity_url.get("href")
+            return re.findall("\d+", href)[0]
+        except ValueError:
+            raise ValueError("Could not retrieve activity id from url: {} ".format(href))
+
     def _scrap_activity(self, activity_url):
         activity_data = {}
-        activity_id = activity_data["id"] = re.findall("\d+", activity_url["href"])[0]  # TODO: try
+        activity_id = activity_data["id"] = self._get_activity_id_from_url(activity_url)
         activity_data["href"] = self.URL_ACTIVITY_PREFIX.format(activity_url["href"])
 
         # get main activity data
@@ -182,7 +218,7 @@ class GarminActivitiesScraper():
 
         print("Scraped activity {} - {}".format(len(self._activities_data) + 1, name.encode('utf-8')))
 
-        return activity_id, activity_data
+        return activity_data
 
     def _scrap_activity_main_data(self, activity_id, activity_data):
         activity_data["href-data-json"] = self.URL_ACTIVITY_DATA_JSON_PREFIX.format(activity_id)
@@ -248,12 +284,22 @@ def main():
     # authenticate
     log_in(args)
 
-    # scrap the data
+    # set the stage
     scraper = GarminActivitiesScraper(skip_gpx=args.skip_gpx,
                                       skip_details=args.skip_details,
                                       skip_splits=args.skip_splits)
+    if (args.input_file != ""):
+        print("Loading activities from file {}...".format(args.input_file))
+        activities_count = scraper.load_from_file(args.input_file)
+        print("Loaded {} activities from file".format(activities_count))
+
+    # scrap the data
     scraper.run(args.num_activities)
-    scraper.save_to_json_file()
+
+    # save to file
+    print("Saving activities to file {}...".format(args.output_file))
+    activities_count = scraper.save_to_json_file(args.output_file)
+    print("Done. Saved {} activities.".format(activities_count))
 
 
 if __name__ == "__main__": main()
